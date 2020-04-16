@@ -1,0 +1,408 @@
+```{r , echo=TRUE,warning=FALSE,message=FALSE}
+library(alr4)
+library(ggplot2)
+library(knitr)
+library(ggplot2)
+#library(kableExtra)
+library(dplyr)
+library(tidyverse)
+library(lme4)
+library(gmodels)
+library(emmeans)
+library(funModeling)
+```
+
+## Data Set Description
+
+The data in FEV.csv presents data measuring the subjects' respiratory function, as well as whether the subjects themselves smoke. In this problem the measured outcome of interest is forced expiratory volume (FEV), which is, essentially, the amount of air an individual can exhale in the first second of a forceful breath. The data recorded in the dataset include the following: fev (liters), age (years), height (inches), sex (male,female), smoke (current smoker / non-current smoker).
+
+```{r , echo=FALSE}
+FEVRosner<-read.csv("FEV.csv", header=T)
+FEVRosner <- FEVRosner[ which(FEVRosner$age > 10), ]
+FEVRosner$smoke<-with(FEVRosner,factor(smoke,labels=c("Current","NonCurr")))
+summary(FEVRosner)
+str(FEVRosner)
+basic_eda <- function(data)
+{
+  glimpse(data)
+  df_status(data)
+  freq(data, plot=TRUE, na.rm=TRUE)  
+  profiling_num(data)
+  plot_num(data)
+  describe(data)
+}
+#
+basic_eda(FEVRosner)
+describe(FEVRosner)
+```
+
+## Instructions:
+
+
+Analysis Objective:  
+
+1)  The primary objective is to describe how smoking affects respiratory function.   However, many other variables are associated with respiratory function.  You will need to build a regression model that appropriately adjusts for the confounding variables so that you can get appropriate inference about the impact of smoking. 
+
+
+Model Building Guidelines:
+
+Use the variable fev as the response.  Use only the variables height, age, sex, and smoke (smoking status) to explain fev.  Build a model that describes fev as well as you can using these variables.  However, I restrict you to use linear versions of height and age as illustrated in the codeblock below.  You are not permitted to use any transformation of fev, nor an interaction between age and height.  
+
+Your model must include at least one term for sex, at least one term for smoke, a linear term for height, and a linear term for age.  Interactions are permitted except an interaction between age and height - the interaction between age and height is NOT allowed.  Building a reasonable model means finding terms that are needed and eliminating terms not needed.  The least complicated model that is permitted is lmmin and the most complicated model that is possible is lmmax defined in the next codeblock.  
+
+```{r,eval=FALSE}
+lmmin <- lm(fev ~ smoke + sex + age + height, data = FEVRosner)
+lmmax <- lm(fev ~ smoke*sex + (smoke + sex)*age + (smoke+sex)*height, data = FEVRosner)
+```
+
+
+
+## Exploratory Analyis
+
+Produce summary statistics and graphical displays.
+
+#### Summary table
+```{r,warning=FALSE,message=FALSE}
+mytable=FEVRosner%>%group_by(sex,smoke)%>%summarise (Avg_FEV=mean(fev),Standard_Deviation=sd(fev),Number_of_Observation=n())
+kable(mytable)
+scatterplotMatrix(~fev + id + age + height + smoke | sex, smooth=T, reg.line=F, spread=F, data=FEVRosner,main="ScatterPlot Matrix")
+```
+
+#### GGPlots
+
+```{r}
+p1<-ggplot(data=FEVRosner,aes(x=smoke,y=fev,group=sex,colour=sex))
+p1+geom_point(size=1.5)+geom_line()+ xlab("Smoking Status")+ylab("FEV")
+
+p2<-ggplot(data=FEVRosner,aes(x=age,y=fev,colour=sex))
+p2+geom_point(size=1.5)+geom_line()+facet_wrap(~smoke)+xlab("Age")+ylab("FEV")
+
+p3<-ggplot(data=FEVRosner,aes(x=height,y=fev,colour=sex))
+p3+geom_point(size=1.5)+geom_line()+facet_wrap(~smoke)+xlab("Height")+ylab("FEV")
+
+p4<-ggplot(data=FEVRosner,aes(x=smoke,y=fev))
+p4<-p4+geom_point(aes(group=sex,fill=sex),position=position_jitterdodge(dodge.width = 0.90))
+p4+geom_boxplot(aes(fill=sex),outlier.colour=NA,alpha=0.50,position=position_dodge(width=0.90))+
+xlab("")+ylab("FEV")+
+guides(fill=guide_legend(title="Sex"))
+
+```
+
+Discussion on the summary statistics and ggplots:
+
+- Summary table output suggests that both male current and noncurrent smoking group have on average higher fev than female group.
+
+- Male datapoints have significantly higher standard deviation as compared to female datapoints.
+
+- Current smoking group have slightly higher fev than noncurrent smoking group for both sex.
+
+- Scatterplot matrix suggests that the data requires no transformation of the variables.
+
+- GGplot1 and boxplot suggests: 
+1) Current smoking group have on average higher fev than noncurrent smoking group
+2) Male have on average higher fev than female for both smoking groups.
+
+
+
+## Create Appropriate Model
+
+Determine a reasonable model.
+
+Before we include the smoke variable in the model, our goal is to find the best combinition of predictors - sex, age and height that would help best the variation in FEV. Once, we figure the best combinition of the predictors, we would include the smoke variable in the model to make the final model for statistical analysis.
+
+```{r}
+#lmmin <- lm(fev ~ smoke + sex + age + height, data = FEVRosner)
+#mmax <- lm(fev ~ smoke*sex + (smoke + sex)*age + (smoke+sex)*height, data = FEVRosner)
+model1<-lm(fev~ sex + age + height, data=FEVRosner)
+#summary(model1)
+model2<-lm(fev~ sex*age + height, data=FEVRosner)
+#summary(model2)
+model3<-lm(fev~ sex + age*height, data=FEVRosner)
+#summary(model3)
+```
+
+
+F-tests between the models to simplify the model:
+
+```{r}
+anova(model1,model2)
+```
+
+Discussion on the F-test:
+
+-NH: $\alpha_ij$=0
+-AH: $\alpha_ij$$\neq$ 0
+-Fstat: 15.8
+-Pvalue: 9.1e-05
+-Conclusion: The very small p-value indicates the data would be inconsistent under the NH condition. There is strong evidence to doubt the NH and strong evidence to support the AH. Hence, we can conclude there is strong evidence that the additional interaction term helps explain the variation in FEV.
+
+- As of now model2 is better. Checking AIC to see which model is better since they are equally complicated and an F-test would be irrelevant.
+
+```{r}
+AIC(model3,model2)    
+```    
+
+- Smaller the AIC, better the model fits well with the data. We can tell that model2 is the best at this point.
+
+```{r}
+model4<-lm(fev~ sex*(height + age), data=FEVRosner)
+#summary(model4)
+anova(model2,model4)
+```
+
+Discussion on the F-test:
+
+-NH: $\alpha_ij$=0
+-AH: $\alpha_ij$$\neq$ 0
+-Fstat: 9.37
+-Pvalue: 0.0024
+-Conclusion: The very small p-value indicates the data would be inconsistent under the NH condition. There is strong evidence to doubt the NH and strong evidence to support the AH. Hence, we can conclude there is strong evidence that the additional interaction term (sex:height) helps explain the variation in FEV.
+
+
+- As of now, model4 fits best with the data. Now that we have figured out the best combination of initial predictors, now it's time to figure the arrangement of the smoke variable in the model. For that we would proceed with the same procedure as performed earlier.
+
+```{r}
+model5<- lm(fev ~ smoke + sex + age + height, data = FEVRosner)
+model6<- lm(fev~ smoke + sex*(height + age), data= FEVRosner)
+anova(model5,model6)
+```
+
+Discussion on the F-test:
+  
+  -NH: $\alpha_ij$=$\beta_ij$=0
+-AH: $\alpha_ij$=$\beta_ij$$\neq$ 0
+-Fstat: 12.1
+-Pvalue: 9.9e-06
+-Conclusion: The very small p-value indicates the data would be inconsistent under the NH condition. There is strong evidence to doubt the NH and strong evidence to support the AH. Hence, we can conclude there is strong evidence that the additional interaction terms (sex:height and sex:age) helps explain the variation in FEV.
+
+
+- So far model6 is the best model so far in the analysis.
+
+```{r}
+model7<- lm(fev~ sex*smoke + sex*(age + height), data= FEVRosner)
+model8<- lm(fev~ smoke*height + sex*(age + height), data= FEVRosner)
+model9<- lm(fev~ smoke*age + sex*(age + height), data=FEVRosner)
+
+```
+
+- Due to same complexity of the models, we are using AIC to compare model7,model8 and model9
+
+```{r}
+AIC(model7,model8,model9)
+```
+
+- Model7, model8 and model9 have no difference whatsoever, but we are going to go with model9 since it had the lowest AIC.
+
+```{r}
+model6<- lm(fev~ smoke + sex*(height + age), data= FEVRosner)
+model9<- lm(fev~ smoke*age + sex*(age + height), data=FEVRosner)
+```
+
+
+Discussion on the F-test:
+  
+  -NH: fev=smoke + sex*(height + age)
+-AH: fev=smoke*age + sex*(age + height)
+-Fstat: 1.65
+-Pvalue: 0.2
+-Conclusion: The very large p-value indicates the data would be consistent under the NH condition. There is no evidence to doubt the NH and no evidence to support the AH. Hence, we can conclude there is no evidence to doubt that the additional interaction term (smoke:age) do not help explain the variation in FEV.
+
+- So far model6 is the best model so far.
+
+
+
+```{r}
+model6<- lm(fev~ smoke + sex*(height + age), data= FEVRosner)
+model10 <- lm(fev ~ smoke*sex + (smoke + sex)*age + (smoke+sex)*height, data = FEVRosner)
+anova(model6,model10)
+AIC(model6,model9,model10)
+```
+
+Discussion on the F-test:
+  
+  -NH: fev= smoke + sex*(height + age)
+-AH: fev= smoke*sex + (smoke + sex)*age + (smoke+sex)*height
+-Fstat: 0.85
+-Pvalue: 0.47
+-Conclusion: The very large p-value indicates the data would be consistent under the NH condition. There is no evidence to doubt the NH and no evidence to support the AH. Hence, we can conclude there is no evidence to doubt that the additional interaction terms do not help explain the variation in FEV.
+
+Looking at the AIC we can tell that model6 is the best model with the lowest AIC and simplistic model and would continue the analysis using: fev~ smoke + sex*(height + age).
+
+
+## Examine Residuals 
+
+```{r,message=FALSE,warning=FALSE}
+resids2<-resid(model6)
+fittedvals2<-fitted(model6)
+mydataframe2<-data.frame(FEVRosner,resids2,fittedvals2)
+p5<-ggplot(data=FEVRosner,aes(x=fittedvals2,y=resids2))
+p5+geom_point(aes(colour=sex),size=1.5)+geom_hline(yintercept = 0)+facet_wrap(~smoke)+
+  xlab("Predicted Value") +ylab("Residuals")
+
+p6<- ggplot(data = FEVRosner, aes(x = fittedvals2, y = resids2))
+p6 + geom_point(aes(colour=sex),size = 1.5) + geom_smooth(se=TRUE,span=.75) +
+  geom_hline(yintercept=0) + xlab("Predicted Value") + ylab("Residuals")
+
+```
+
+Discussion on Residual plot:
+  
+  - From the residual plot, we can tell that all the residuals on average are plotted around zero showing no sign of curvature/ non-constant variance. This indicates that the model fits well with the data. However, if we dig deeper we can see that on fig1 -- the male noncurrent smoker residuals are much more scattered than the female noncurrent smokers indicating there is non-constant variance between groups (which may be potentially violating the model assumption). In fig2 we can also tell that overall most male residuals are more scattered than female residuals (again indicating non-constant error variance). 
+
+## Analyze Effects
+
+```{r,message=FALSE,warning=FALSE}
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+plot_model(model6,type="pred",terms=c("sex","smoke"))
+plot_model(model6,type="pred",terms=c("smoke","sex"))
+
+p7<-ggplot(data=FEVRosner,aes(x=height,y=fev,color=smoke))
+p7+geom_point(size=1.5)+geom_smooth(method=lm,se=FALSE)+facet_wrap(~sex)+xlab("Height")+ylab("FEV")
+
+ggplot(model6, aes(x = age, y = fev, colour = sex)) + geom_point() + geom_smooth(method = lm,
+                                                                                 se = FALSE, fullrange = TRUE) + ylab("FEV") + xlab("Age")
+Anova(model6)
+emmip(model6, sex ~ smoke)
+
+```
+
+Discussion on the graphical displays:
+  
+  - SJ plot suggests that noncurrent smokers have on average higher fev as compared to current smokers. It also suggests that male group have on average higher fev than female group for both current and noncurrent smokers, however, current smokers group have higher variation in fev than noncurrent smokers across both sex.
+
+- From the ggplot with fev and height suggests that the fev and height share a positive relationship as height increases, fev increases on average. Overall, male fev increases much faster than female and noncurrent smokers tend to have higher fev than current smokers.
+
+- From the ggplot with fev and age, we can tell that fev increases with age, however, male fev increases much faster than it does for female group.
+
+- The big ANOVA command output suggests that all the variables in the model are statistically significant with very small p-value (including the interaction terms). However, there is very weak evidence that the smoke predictor variable may be statistically significant.
+
+
+#### Examining the interaction terms
+
+```{r}  
+summary(model6)
+with(FEVRosner, interaction.plot(height, sex, fev,
+                                 ylim = c(1.7, 5.8), lty = c(1, 20), lwd = 1.5,
+                                 ylab = "FEV", xlab = "Height", trace.label = "Sex"))
+
+with(FEVRosner, interaction.plot(age, sex, fev,
+                                 ylim = c(1.7, 5.8), lty = c(1, 20), lwd = 1.5,
+                                 ylab = "FEV", xlab = "Age", trace.label = "Sex"))
+
+```
+
+Discussion on the plot:
+  
+  - We can tell that there is strong evidence that interaction term exists from the non-parallel lines for different groups.
+
+### Using the emmeans package
+
+- Comparing the fev amongs different smoking group
+
+```{r}
+emmeans(model6,~smoke)
+comparisons1<-emmeans(model6,~smoke)
+pairs(comparisons1)
+confint(pairs(comparisons1))
+CLD(comparisons1)
+```
+
+Discussion amongs smoking groups:
+  
+  - We can tell from the emmeans output that the average fev for Current and Noncurrent smoking groups are also identical. There is no big difference in the estimated average fev, SE or the confidence intervals.
+
+- From the comparison output, we can tell that Noncurrent smoking group have 0.125 times higher the fev than Current smoking group with a p-value of 0.0950 indicating that there is no evidence to suggest that the difference is statistically significant.
+
+- From the comparison confidence interval output, we can tell that the estimated difference in fev between the smoking groups have CI (-0.273, 0.0221) indicating that the plausible values contains zero. Therefore, there is no evidence to suggest that the difference in smoking groups is statistically significant.
+
+- From CLD output, we can tell that there is no evidence that Current and Noncurrent smoking groups are different from each other with respect to fev.
+
+
+- Comparing the fev among sex
+
+```{r,warning=FALSE,message=FALSE}
+emmeans(model6,~sex)
+comparisons2<-emmeans(model6,~sex)
+pairs(comparisons2)
+confint(pairs(comparisons2))
+CLD(comparisons2)
+```
+
+Discussion amongs sex:
+  
+  - We can tell from the emmeans output that the average fev for Female and Male are also different with male having estimated average higher fev. There is some difference in the estimated average fev, SE and the confidence intervals.
+
+- From the comparison output, we can tell that Male have 0.285 times higher the fev than Female with a p-value of 0.0002 indicating that there is evidence to suggest that the difference is statistically significant.
+
+- From the comparison confidence interval output, we can tell that the estimated difference in fev between Female and Male have CI (-0.43, 0.138) indicating that the plausible values only contains negative values. Therefore, there is evidence to suggest that the difference in fev between sex is statistically significant.
+
+- From CLD output, we can tell that there is evidence that Male and Female are different from each other with respect to fev.
+
+- The conditional emmeans output also strongly suggest that there is no significant difference between smoking groups, however, there is significant difference in fev between sex.
+
+```{r}
+comparison3<-emmeans(model6,~smoke|sex)
+pairs(comparison3)
+confint(pairs(comparison3))
+
+comparison4<-emmeans(model6,~sex|smoke)
+pairs(comparison4)
+confint(pairs(comparison4))
+
+```
+
+#### Using the RMS package
+```{r,warning=FALSE,message=FALSE}
+library(rms)
+dd<-datadist(FEVRosner)
+options(datadist = "dd")
+rmsmodel6<-ols(fev~ smoke + sex*(height + age), data= FEVRosner,x=T,y=T)
+print(rmsmodel6)
+anova(rmsmodel6)
+```
+
+Discussion from the RMS output:
+  
+  - The small p-value strongly suggests that the interaction terms help explain the variation in fev.
+
+```{r}
+summary(rmsmodel6,smoke="Current")
+```
+Discussion from the summary output:
+  
+  - Height and Age have positive effect in fev.
+
+- Noncurrent have higher fev than Current smoking group but there is no evidence to suggest that the difference in statistically significant as the confidence interval (-0.27,0.022) of the contrast have plausible values containing zero.
+
+
+```{r}
+summary(rmsmodel6,sex="male")
+summary(rmsmodel6,sex="female")
+```
+
+Discussion from the summary output:
+  
+  - Height and Age have positive effect in fev for male group.
+
+- Male have higher fev than female and there is evidence to suggest that the difference is statistically significant as the confidence interval (0.047, 0.351) contains all plausible positive values.
+
+- Noncurrent have higher fev than Current smoking group but there is no evidence to suggest that the difference in statistically significant as the confidence interval (-0.27,0.022) of the contrast have plausible values containing zero.
+
+- From the sex=female output, we can tell that surprisingly age has no significant effect on fev and there is evidence to suggest that the age effect is statistically insignificant with confidence interval (-0.079,0.022) indicating the contrast have plausible values containing zero.
+
+## Summary
+
+Give a final report about the analysis objective in this section.  You should use output from previous sections in your report.
+
+The primary objective is to describe how smoking affects respiratory function:
+  
+  - Final model used: fev~ smoke + sex*(height + age)
+
+-  Height and Age have positive effect in fev for male group and height have positive effect in fev for female group.
+
+- Noncurrent smoking group have 0.125 times higher the fev than Current smoking group with a big p-value and confidence interval test we can tell that there is no evidence to suggest that the difference is statistically significant.
+
+- Male have 0.285 times higher the fev than Female with a small p-value and confidence interval test we call tell that there is evidence to suggest that the difference is statistically significant.
+© 2020 GitHub, Inc.
